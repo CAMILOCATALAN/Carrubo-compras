@@ -166,8 +166,8 @@ public final class MainActivity extends Activity {
                 api.printText("CARRUBO - K2 V7.1 TEST\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n---------------------\nTEST DIAGNOSTICO, NO VENTA\n\n");
                 show("PASO 2 - cutPaper");
                 api.cutPaper(1, 0);
-                prefs().edit().putString(KEY_STATE, "unknown").commit();
-                result = "SDK acepto printText + cutPaper. Comprueba el papel; SIN reintento automatico.";
+                prefs().edit().putString(KEY, "unknown").commit();
+                show("SDK acepto printText + cutPaper. Comprueba el papel; SIN reintento automatico.");
             } catch (Exception e) {
                 prefs().edit().putString(KEY, "unknown").commit();
                 show("Estado ambiguo: " + e.getClass().getSimpleName() + ". Revisar papel.");
