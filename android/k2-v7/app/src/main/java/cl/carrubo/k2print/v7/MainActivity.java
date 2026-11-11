@@ -7,294 +7,314 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
 import android.view.Gravity;
-import android.view.inputmethod.InputMethodManager;
-import android.content.Context;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-
 import com.sunmi.externalprinterlibrary.api.ConnectCallback;
 import com.sunmi.externalprinterlibrary.api.SunmiPrinter;
 import com.sunmi.externalprinterlibrary.api.SunmiPrinterApi;
-import java.net.URL;
-import javax.net.ssl.HttpsURLConnection;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import org.json.JSONObject;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
+import java.security.KeyStore;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.net.ssl.HttpsURLConnection;
+import org.json.JSONObject;
 
-/**
- * V7.3 diagnostic: server creates a fixed non-tax DEMO ticket and one-time code.
- * The operator manually enters that code in this APK, then the APK claims it via HTTPS
- * and prints once with the K2 printer SDK that physically worked in V7.2.
- * NO Mercado Pago calls, NO client orders, NO background polling, NO WebView.
- */
+/** Demo-only, foreground-only K2 app: pair once, poll, print once; never charges. */
 public final class MainActivity extends Activity {
-  private static final String HOST =
-      "carrubo-pos-demo.lovable.app";
-  private static final String PATH = "/api/public/k2/v7-demo/claim";
-  private static final String PREFS = "carrubo_k2_v73";
-  private static final String ST = "state";
-  private static final String LAST = "last_job_id";
-  private static final String CODE_RE = "^[A-F0-9]{16}$";
-  private static final String UUID_RE =
-      "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$";
-
-  private final Handler ui = new Handler(Looper.getMainLooper());
-  private final ExecutorService executor = Executors.newSingleThreadExecutor();
-  private final AtomicBoolean busy = new AtomicBoolean(false);
-  private volatile boolean connected = false;
-  private volatile boolean printerReady = false;
-  private SunmiPrinterApi api;
-  private TextView status;
-  private Button printButton;
-  private EditText codeField;
-
-  private final ConnectCallback callback = new ConnectCallback() {
-    @Override public void onFound() { setStatus("SUNMI detectado"); }
-    @Override public void onUnfound() {
-      connected = false; printerReady = false;
-      setStatus("SUNMI no detectado"); updateButton();
-    }
-    @Override public void onConnect() {
-      connected = true; setStatus("Servicio SUNMI conectado"); checkPrinter();
-    }
-    @Override public void onDisconnect() {
-      connected = false; printerReady = false;
-      setStatus("Servicio SUNMI desconectado"); updateButton();
-    }
+  private static final String HOST="carrubo-pos-demo.lovable.app";
+  private static final String BASE="/api/public/k2/v74-demo/";
+  private static final String PREF="carrubo_v74_demo";
+  private static final String ST="status";
+  private static final String LAST="job_id";
+  private static final String ACK="ack_result";
+  private static final String TOKEN="encrypted_token";
+  private static final String IV="token_iv";
+  private static final String ALIAS="carrubo_k2_v74_aes";
+  private static final String CODE_PATTERN="^[A-F0-9]{24}$";
+  private static final String TOKEN_PATTERN="^[A-Za-z0-9_-]{43}$";
+  private static final String UUID_PATTERN="^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+  private final Handler ui=new Handler(Looper.getMainLooper());
+  private final ExecutorService io=Executors.newSingleThreadExecutor();
+  private final AtomicBoolean busy=new AtomicBoolean(false);
+  private SunmiPrinterApi printer;
+  private volatile boolean connected=false,ready=false,active=false,visible=false;
+  private EditText codeInput;
+  private TextView label,detail;
+  private Button listenButton,pairButton,reackButton,doneButton;
+  private Runnable tick;
+  private final ConnectCallback cb=new ConnectCallback(){
+    @Override public void onFound(){message("Servicio SUNMI detectado.");}
+    @Override public void onUnfound(){connected=false;ready=false;message("SUNMI desconectado.");controls();}
+    @Override public void onConnect(){connected=true;checkPrinter();}
+    @Override public void onDisconnect(){connected=false;ready=false;message("SUNMI desconectado.");controls();}
   };
 
-  @Override protected void onCreate(Bundle b) {
+  @Override public void onCreate(Bundle b){
     super.onCreate(b);
-    ScrollView scroll = new ScrollView(this);
-    LinearLayout root = new LinearLayout(this);
-    root.setOrientation(LinearLayout.VERTICAL);
-    root.setPadding(35, 28, 35, 30);
-    root.setBackgroundColor(Color.rgb(250, 245, 236));
-    scroll.addView(root);
-
-    TextView header = new TextView(this);
-    header.setText("CARRUBO K2 - V7.3\nCOMANDA DESDE SERVIDOR");
-    header.setTextSize(23); header.setTextColor(Color.rgb(132, 37, 27));
-    header.setGravity(Gravity.CENTER);
-    root.addView(header);
-    TextView detail = new TextView(this);
-    detail.setText("DEMOSTRACION - NO COBRA - NO TRIBUTARIO\n" +
-      "V6 sigue instalada y sin cambios.\n" +
-      "Obtén el código en el panel administrador de Lovable.\n" +
-      "Solo imprime UNA comanda de prueba generada por el servidor.");
-    detail.setPadding(0, 20, 0, 12); detail.setTextSize(17);
-    root.addView(detail);
-
-    codeField = new EditText(this);
-    codeField.setSingleLine(true);
-    codeField.setTextSize(25);
-    codeField.setAllCaps(true);
-    codeField.setHint("Código de 16 caracteres");
-    codeField.setInputType(android.text.InputType.TYPE_CLASS_TEXT |
-      android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);
-    root.addView(codeField);
-
-    status = new TextView(this);
-    status.setTextSize(17); status.setTextColor(Color.BLACK);
-    status.setPadding(0, 16, 0, 16);
-    root.addView(status);
-
-    Button check = new Button(this);
-    check.setText("Verificar impresora");
-    check.setOnClickListener(v -> checkPrinter());
-    root.addView(check);
-
-    printButton = new Button(this);
-    printButton.setText("RECIBIR E IMPRIMIR COMANDA DEMO");
-    printButton.setOnClickListener(v -> confirmClaim());
-    root.addView(printButton);
-
-    Button reset = new Button(this);
-    reset.setText("Restablecer bloqueo DESPUÉS de revisar el papel");
-    reset.setOnClickListener(v -> {
-      if (busy.get()) return;
-      new AlertDialog.Builder(this)
-        .setTitle("Revisar el papel antes")
-        .setMessage("Un código ya canjeado NO se puede reutilizar. Si quedó en estado desconocido, verifica si salió papel antes de restablecer. Esto solo permite ingresar un código NUEVO.")
-        .setNegativeButton("Cancelar", null)
-        .setPositiveButton("Ya revisé el papel", (d,w) -> {
-          if (!busy.get()) {
-            prefs().edit().putString(ST,"idle").commit();
-            setStatus("Bloqueo restablecido. Solicita un CÓDIGO NUEVO.");
-            updateButton();
-          }
-        }).show();
-    });
-    root.addView(reset);
-    setContentView(scroll);
-
-    if (!"idle".equals(state())) {
-      setStatus("Existe una operación pendiente/ambigua de una sesión anterior. Verificar papel antes de restablecer.");
-    } else {
-      setStatus("Sin impresión pendiente. Conectando SUNMI.");
-    }
-    updateButton();
-    connect();
-  }
-
-  private SharedPreferences prefs() { return getSharedPreferences(PREFS,MODE_PRIVATE); }
-  private String state() { return prefs().getString(ST,"idle"); }
-  private void setStatus(String msg) {
-    ui.post(() -> {
-      if (status != null) {
-        String j = prefs().getString(LAST,"");
-        status.setText(msg + "\n\nEstado persistente: " + state() +
-          (j.isEmpty() ? "" : "\nÚltimo job: " + j.substring(0,Math.min(j.length(),8)) + "…"));
-      }
-    });
-  }
-  private void updateButton() {
-    ui.post(() -> {
-      if (printButton != null) printButton.setEnabled(connected && printerReady &&
-        !busy.get() && "idle".equals(state()));
-    });
-  }
-  private void connect() {
-    try {
-      api = SunmiPrinterApi.getInstance();
-      api.setPrinter(SunmiPrinter.SunmiYKPriner,new String[0]);
-      api.connectPrinter(this,callback);
-    } catch (Exception e) {
-      connected=false;printerReady=false;
-      setStatus("SUNMI no disponible: "+e.getClass().getSimpleName());
-    }
-    updateButton();
-  }
-  private void checkPrinter() {
-    if (!connected || api==null) {
-      setStatus("Impresora SUNMI sin conexión"); updateButton(); return;
-    }
-    executor.execute(() -> {
-      try {
-        int state=api.getPrinterStatus();
-        printerReady=(state==0);
-        setStatus(printerReady ? "Impresora normal: lista" : "Impresora NO lista (código "+state+")");
-      } catch(Exception e){
-        printerReady=false;setStatus("Error verificando SUNMI: "+e.getClass().getSimpleName());
-      }
-      updateButton();
-    });
-  }
-
-  private void confirmClaim() {
-    if (!connected || !printerReady || busy.get() || !"idle".equals(state())) return;
-    String code = codeField.getText().toString().replaceAll("\\s+","").toUpperCase(Locale.ROOT);
-    if (!code.matches(CODE_RE)) {
-      setStatus("Código inválido: deben ser exactamente 16 caracteres 0-9 o A-F.");
-      return;
-    }
-    new AlertDialog.Builder(this)
-      .setTitle("Imprimir comanda SOLO DEMO")
-      .setMessage("Esta acción canjea un código de un solo uso del servidor y puede imprimir una única comanda NO TRIBUTARIA. No cobra dinero ni envía pedidos a cocina.")
+    ScrollView scroll=new ScrollView(this);
+    LinearLayout box=new LinearLayout(this);
+    box.setOrientation(LinearLayout.VERTICAL);
+    box.setPadding(32,25,32,32);
+    box.setBackgroundColor(Color.rgb(250,245,235));
+    scroll.addView(box);
+    TextView heading=new TextView(this);
+    heading.setText("CARRUBO K2 - V7.4\nIMPRESION AUTOMATICA DEMO");
+    heading.setTextSize(23);heading.setGravity(Gravity.CENTER);
+    heading.setTextColor(Color.rgb(132,36,26));box.addView(heading);
+    TextView info=new TextView(this);
+    info.setText("PRUEBA, NO COBRA, NO TRIBUTARIO\nNO ENVIA A COCINA, V6 INTACTA\n\nEmparejar una vez; activar recepción para recibir comandas DEMO autorizadas desde Lovable.");
+    info.setTextSize(16);info.setPadding(0,22,0,15);box.addView(info);
+    codeInput=new EditText(this);codeInput.setSingleLine(true);codeInput.setTextSize(23);
+    codeInput.setHint("Código de 24 caracteres");
+    codeInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT|
+      android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS);box.addView(codeInput);
+    pairButton=new Button(this);pairButton.setText("EMPAREJAR K2");
+    pairButton.setOnClickListener(v->confirmPair());box.addView(pairButton);
+    label=new TextView(this);label.setTextSize(16);label.setPadding(0,15,0,10);box.addView(label);
+    Button check=new Button(this);check.setText("Verificar impresora");
+    check.setOnClickListener(v->checkPrinter());box.addView(check);
+    listenButton=new Button(this);listenButton.setText("INICIAR RECEPCION AUTOMATICA DEMO");
+    listenButton.setOnClickListener(v->toggle());box.addView(listenButton);
+    reackButton=new Button(this);reackButton.setText("REENVIAR SOLO ACUSE (SIN IMPRIMIR)");
+    reackButton.setOnClickListener(v->resendAck());box.addView(reackButton);
+    doneButton=new Button(this);doneButton.setText("REVISE EL PAPEL / PERMITIR SIGUIENTE DEMO");
+    doneButton.setOnClickListener(v->confirmPaper());box.addView(doneButton);
+    detail=new TextView(this);detail.setTextSize(17);detail.setTextColor(Color.BLACK);
+    detail.setPadding(0,18,0,18);box.addView(detail);
+    Button forget=new Button(this);forget.setText("OLVIDAR EMPAREJAMIENTO LOCAL");
+    forget.setOnClickListener(v->new AlertDialog.Builder(this)
+      .setTitle("Olvidar emparejamiento")
+      .setMessage("Necesitarás generar un nuevo código en Lovable. ¿Confirmar?")
       .setNegativeButton("Cancelar",null)
-      .setPositiveButton("Recibir e imprimir DEMO",(d,w)-> runClaim(code))
-      .show();
+      .setPositiveButton("Olvidar",(d,w)->{stop();eraseToken();message("Emparejamiento local olvidado.");controls();}).show());
+    box.addView(forget);
+    setContentView(scroll);
+    message("idle".equals(state())?"K2 iniciado. Empareja o activa recepción.":"Resultado anterior pendiente o ambiguo. Revisa el papel.");
+    controls();connect();
   }
-
-  private void runClaim(String code) {
-    if (!busy.compareAndSet(false,true) || !"idle".equals(state())) return;
-    if (!prefs().edit().putString(ST,"requesting").commit()) {
-      busy.set(false); setStatus("No se pudo registrar el intento local."); return;
-    }
-    updateButton();
-    setStatus("Canjeando código contra servidor…");
-    executor.execute(() -> {
-      try {
-        if (api==null || api.getPrinterStatus()!=0) throw new Exception("Impresora no lista");
-        JSONObject job = claimOneTime(code);
-        String id=job.getString("job_id"), ticket=job.getString("text");
-        if (!prefs().edit().putString(LAST,id).putString(ST,"claimed").commit()) {
-          throw new Exception("No se pudo persistir el job");
-        }
-        if (api.getPrinterStatus()!=0) throw new Exception("Impresora dejó de estar lista");
-        prefs().edit().putString(ST,"printing_unknown").commit(); // crash-safe before native call
-        setStatus("Código reclamado. Enviando texto y corte a SUNMI.");
-        api.printText(ticket);
-        api.cutPaper(1,0);
-        prefs().edit().putString(ST,"sent_unverified").commit();
-        setStatus("COMANDA DEMO enviada al SDK. Revisa el papel. No se repetirá automáticamente.");
-      } catch(Exception e) {
-        if ("requesting".equals(state()) || "claimed".equals(state())) {
-          prefs().edit().putString(ST,"unknown").commit();
-        }
-        setStatus("Sin confirmación: " + e.getClass().getSimpleName() + " (" +
-          (e.getMessage()==null ? "error" : e.getMessage()) + "). No repetir automáticamente; revisar papel.");
-      } finally {
-        busy.set(false);
-        updateButton();
-      }
+  private SharedPreferences prefs(){return getSharedPreferences(PREF,MODE_PRIVATE);}
+  private String state(){return prefs().getString(ST,"idle");}
+  private String last(){return prefs().getString(LAST,"");}
+  private void message(String s){ui.post(()->{if(detail!=null)detail.setText(s+
+    "\n\nEstado: "+state()+(last().isEmpty()?"":"\nÚltimo job: "+last().substring(0,8)+"..."));});}
+  private void controls(){ui.post(()->{
+    boolean paired=readToken()!=null;
+    if(label!=null)label.setText("Impresora: "+(ready?"lista":"no lista")+
+      " / Emparejado: "+(paired?"SI":"NO")+" / Recepción: "+(active?"ON":"OFF"));
+    if(pairButton!=null)pairButton.setEnabled(!busy.get()&&!active);
+    if(listenButton!=null){listenButton.setText(active?"DETENER RECEPCION DEMO":"INICIAR RECEPCION AUTOMATICA DEMO");
+      listenButton.setEnabled(active || (!busy.get()&&ready&&paired&&"idle".equals(state())));}
+    if(reackButton!=null)reackButton.setEnabled(!busy.get()&&paired&&!last().isEmpty()&&
+      ("sent_unverified".equals(state())||"unknown".equals(state())));
+    if(doneButton!=null)doneButton.setEnabled(!busy.get()&&!active&&!last().isEmpty()&&
+      ("sent_unverified".equals(state())||"unknown".equals(state())));
+  });}
+  private void connect(){
+    try{printer=SunmiPrinterApi.getInstance();
+      printer.setPrinter(SunmiPrinter.SunmiYKPriner,new String[0]);
+      printer.connectPrinter(this,cb);
+    }catch(Exception e){ready=false;message("SUNMI no disponible: "+e.getClass().getSimpleName());}
+    controls();
+  }
+  private void checkPrinter(){
+    if(!connected||printer==null){message("Impresora sin conexión.");controls();return;}
+    io.execute(()->{
+      try{int n=printer.getPrinterStatus();ready=(n==0);
+        message(ready?"Impresora normal: lista.":"Impresora no lista, código "+n);
+      }catch(Exception e){ready=false;message("Error estado SUNMI: "+e.getClass().getSimpleName());}
+      controls();
     });
   }
-
-  private JSONObject claimOneTime(String code) throws Exception {
-    URL url=new URL("https",HOST,PATH);
-    if (!"https".equals(url.getProtocol()) || !HOST.equals(url.getHost())) {
-      throw new Exception("Destino HTTPS inválido");
-    }
-    HttpsURLConnection conn=(HttpsURLConnection)url.openConnection();
-    try {
-      conn.setConnectTimeout(8000);conn.setReadTimeout(12000);
-      conn.setInstanceFollowRedirects(false);
-      conn.setRequestMethod("POST");
-      conn.setDoOutput(true);
-      conn.setRequestProperty("Content-Type","application/json; charset=UTF-8");
-      conn.setRequestProperty("Accept","application/json");
-      byte[] body=new JSONObject().put("code",code).toString().getBytes(StandardCharsets.UTF_8);
-      try(OutputStream out=conn.getOutputStream()){out.write(body);}
-      int status=conn.getResponseCode();
-      if(status!=200) throw new Exception("Servidor HTTP "+status+"; el código pudo vencer o ya fue utilizado");
-      ByteArrayOutputStream bytes=new ByteArrayOutputStream();
-      try(InputStream in=conn.getInputStream()){
-        byte[] buf=new byte[512];int n;
-        while((n=in.read(buf))!=-1){
-          bytes.write(buf,0,n);
-          if(bytes.size()>2600) throw new Exception("Respuesta demasiado larga");
-        }
-      }
-      JSONObject data=new JSONObject(new String(bytes.toByteArray(),StandardCharsets.UTF_8));
-      if (!"CARRUBO_V7_DEMO".equals(data.optString("kind")) || data.optInt("version")!=1) {
-        throw new Exception("Respuesta no es comanda DEMO autorizada");
-      }
-      String id=data.optString("job_id");
-      String ticket=data.optString("text");
-      if(!id.matches(UUID_RE) || ticket.length()<30 || ticket.length()>1700) {
-        throw new Exception("Identificador o tamaño de ticket inválido");
-      }
-      if(!ticket.contains("CARRUBO") || !ticket.contains("NO TRIBUTARIO") ||
-        !(ticket.contains("NO SE COBRO") || ticket.contains("NO SE COBRÓ")) ||
-        !(ticket.contains("NO SE ENVIO A COCINA") || ticket.contains("NO SE ENVIÓ A COCINA"))) {
-        throw new Exception("Faltan los avisos obligatorios de demostración");
-      }
-      for (String line:ticket.split("\n",-1)) {
-        if (line.length()>48 || line.indexOf('\r')>=0 || line.indexOf('\u001b')>=0 ||
-          line.indexOf('\u0000')>=0) {
-          throw new Exception("Formato de ticket no admitido");
-        }
-      }
-      if (id.equals(prefs().getString(LAST,""))) throw new Exception("Job repetido");
-      return data;
-    } finally {conn.disconnect();}
+  private void confirmPair(){
+    if(busy.get()||active)return;
+    String code=codeInput.getText().toString().replaceAll("\\s+","").toUpperCase(Locale.ROOT);
+    if(!code.matches(CODE_PATTERN)){message("Código: exactamente 24 caracteres 0-9 o A-F.");return;}
+    new AlertDialog.Builder(this).setTitle("Emparejar K2")
+      .setMessage("Esto permite recibir únicamente comandas DEMO sin cobros.")
+      .setNegativeButton("Cancelar",null).setPositiveButton("Emparejar",(d,w)->pair(code)).show();
   }
-
-  @Override protected void onDestroy() {
-    try { if(api!=null)api.disconnectPrinter(this); } catch(Exception ignored){}
-    executor.shutdown();
-    super.onDestroy();
+  private void pair(String code){
+    if(!busy.compareAndSet(false,true))return;controls();message("Emparejando con Lovable...");
+    io.execute(()->{
+      try{
+        JSONObject response=post("pair",new JSONObject().put("code",code),null);
+        if(!"CARRUBO_V74_PAIRED".equals(response.optString("kind"))||response.optInt("version")!=1)
+          throw new Exception("Respuesta de pairing inválida");
+        String token=response.optString("device_token");
+        if(!token.matches(TOKEN_PATTERN))throw new Exception("Token no válido");
+        saveToken(token);message("Emparejado. Activar recepción DEMO.");
+        ui.post(()->codeInput.setText(""));
+      }catch(Exception e){message("Emparejamiento falló: "+describe(e));}
+      finally{busy.set(false);controls();}
+    });
+  }
+  private void toggle(){
+    if(active){stop();message("Recepción detenida.");controls();return;}
+    if(readToken()==null||!ready||!"idle".equals(state())){message("Requiere emparejar, impresora lista y estado idle.");return;}
+    active=true;controls();message("Recepción DEMO activa. Consultando cada 7 segundos.");
+    tick=new Runnable(){@Override public void run(){
+      if(!active||!visible)return;
+      poll();
+      if(active)ui.postDelayed(this,7000);
+    }};
+    if(visible)ui.post(tick);
+  }
+  private void stop(){active=false;if(tick!=null)ui.removeCallbacks(tick);controls();}
+  private void poll(){
+    if(!busy.compareAndSet(false,true))return;
+    String key=readToken();
+    if(key==null){busy.set(false);stop();return;}
+    io.execute(()->{
+      try{
+        JSONObject response=post("poll",new JSONObject(),key);
+        if(!"CARRUBO_V74_DEMO".equals(response.optString("kind"))||response.optInt("version")!=1)
+          throw new Exception("Poll inesperado");
+        if(response.isNull("job")&&!response.has("job_id"))return;
+        String id=response.optString("job_id"),ticket=response.optString("text");
+        validTicket(id,ticket);
+        stop();
+        if(!prefs().edit().putString(ST,"claimed").putString(LAST,id).remove(ACK).commit())
+          throw new Exception("No se pudo reservar en disco");
+        if(printer.getPrinterStatus()!=0)throw new Exception("Impresora no lista");
+        if(!prefs().edit().putString(ST,"printing_unknown").commit())
+          throw new Exception("No se pudo registrar antes de imprimir");
+        message("Comanda DEMO recibida: imprimiendo...");
+        printer.printText(ticket);
+        printer.cutPaper(1,0);
+        prefs().edit().putString(ST,"sent_unverified").putString(ACK,"sent_unverified").commit();
+        message("Enviado a SUNMI. Revisar papel. No se repetirá automáticamente.");
+        try{acknowledge(id,"sent_unverified",key);}
+        catch(Exception e){message("Papel a revisar. Falta ACK al servidor: "+describe(e)+". Puede reenviar SOLO ACK.");}
+      }catch(Exception e){
+        if("claimed".equals(state())||"printing_unknown".equals(state())){
+          prefs().edit().putString(ST,"unknown").putString(ACK,"unknown").commit();
+          try{acknowledge(last(),"unknown",key);}catch(Exception ignored){}
+          message("RESULTADO DESCONOCIDO. Revisar papel: "+describe(e));
+        }else{
+          message("Consulta sin trabajo: "+describe(e));
+          if(describe(e).contains("HTTP 401")){stop();eraseToken();}
+        }
+      }finally{busy.set(false);controls();}
+    });
+  }
+  private void validTicket(String id,String ticket)throws Exception{
+    if(!id.matches(UUID_PATTERN)||id.equals(last())||!"idle".equals(state()))throw new Exception("Job duplicado o inválido");
+    if(ticket.length()<30||ticket.length()>1700)throw new Exception("Ticket demasiado corto/largo");
+    if(!ticket.contains("CARRUBO")||!ticket.contains("NO TRIBUTARIO")||
+      !ticket.contains("NO SE COBRO")||!ticket.contains("NO SE ENVIO A COCINA"))
+      throw new Exception("Faltan marcadores DEMO");
+    for(String line:ticket.split("\n",-1)){
+      if(line.length()>32||line.indexOf('\r')>=0||line.indexOf('\u001b')>=0||
+        line.indexOf('\u0000')>=0)throw new Exception("Formato no válido para 58mm");
+      for(int i=0;i<line.length();i++)if(line.charAt(i)>127)throw new Exception("Texto no ASCII");
+    }
+  }
+  private void acknowledge(String job,String result,String key)throws Exception{
+    if(!job.matches(UUID_PATTERN))throw new Exception("Job no válido");
+    JSONObject resp=post("ack",new JSONObject().put("job_id",job).put("result",result),key);
+    if(!resp.optBoolean("ok",false))throw new Exception("ACK no aceptado");
+    message("ACK recibido por servidor: "+result+". Verificar papel.");
+  }
+  private void resendAck(){
+    if(!busy.compareAndSet(false,true))return;
+    final String job=last(),key=readToken(),res=prefs().getString(ACK,"unknown");
+    if(key==null||job.isEmpty()){busy.set(false);controls();return;}
+    controls();io.execute(()->{
+      try{acknowledge(job,res,key);}catch(Exception e){message("Error reenvío ACK: "+describe(e));}
+      finally{busy.set(false);controls();}
+    });
+  }
+  private void confirmPaper(){
+    if(active||busy.get()||last().isEmpty())return;
+    new AlertDialog.Builder(this).setTitle("Revisar papel")
+      .setMessage("Confirma solo después de comprobar físicamente si se imprimió. NO reenvía ticket ni confirma en el servidor.")
+      .setNegativeButton("Cancelar",null)
+      .setPositiveButton("Verificado",(d,w)->{
+        prefs().edit().putString(ST,"idle").commit();
+        message("Listo para otra comanda DEMO autorizada. Activa recepción.");
+        controls();
+      }).show();
+  }
+  private JSONObject post(String route,JSONObject body,String token)throws Exception{
+    if(!"pair".equals(route)&&!"poll".equals(route)&&!"ack".equals(route))throw new Exception("Ruta inválida");
+    URL url=new URL("https",HOST,BASE+route);
+    if(!"https".equals(url.getProtocol())||!HOST.equals(url.getHost()))throw new Exception("Origen inválido");
+    HttpsURLConnection conn=(HttpsURLConnection)url.openConnection();
+    try{
+      conn.setConnectTimeout(7000);conn.setReadTimeout(13000);conn.setInstanceFollowRedirects(false);
+      conn.setRequestMethod("POST");conn.setDoOutput(true);
+      conn.setRequestProperty("Content-Type","application/json; charset=utf-8");
+      conn.setRequestProperty("Accept","application/json");
+      if(token!=null){if(!token.matches(TOKEN_PATTERN))throw new Exception("Token inválido");
+        conn.setRequestProperty("Authorization","Bearer "+token);}
+      byte[] b=body.toString().getBytes(StandardCharsets.UTF_8);
+      if(b.length>256)throw new Exception("Cuerpo demasiado largo");
+      try(OutputStream out=conn.getOutputStream()){out.write(b);}
+      int code=conn.getResponseCode();
+      if(code!=200)throw new Exception("HTTP "+code+" ("+route+")");
+      ByteArrayOutputStream out=new ByteArrayOutputStream();
+      try(InputStream in=conn.getInputStream()){
+        byte[] tmp=new byte[512];int n;
+        while((n=in.read(tmp))!=-1){out.write(tmp,0,n);if(out.size()>3500)throw new Exception("Respuesta demasiado grande");}
+      }
+      return new JSONObject(new String(out.toByteArray(),StandardCharsets.UTF_8));
+    }finally{conn.disconnect();}
+  }
+  private String describe(Exception e){
+    String x=e.getMessage();return e.getClass().getSimpleName()+(x==null?"":(": "+x.substring(0,Math.min(x.length(),70))));
+  }
+  private SecretKey secret()throws Exception{
+    KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
+    if(ks.containsAlias(ALIAS))return (SecretKey)ks.getKey(ALIAS,null);
+    KeyGenerator kg=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");
+    kg.init(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT)
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setRandomizedEncryptionRequired(true).build());
+    return kg.generateKey();
+  }
+  private void saveToken(String token)throws Exception{
+    Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.ENCRYPT_MODE,secret());
+    String encrypted=Base64.encodeToString(c.doFinal(token.getBytes(StandardCharsets.UTF_8)),Base64.NO_WRAP);
+    String iv=Base64.encodeToString(c.getIV(),Base64.NO_WRAP);
+    if(!prefs().edit().putString(TOKEN,encrypted).putString(IV,iv).commit())
+      throw new Exception("No fue posible guardar token cifrado");
+  }
+  private String readToken(){
+    try{
+      String data=prefs().getString(TOKEN,""),iv=prefs().getString(IV,"");
+      if(data.isEmpty()||iv.isEmpty())return null;
+      Cipher c=Cipher.getInstance("AES/GCM/NoPadding");
+      c.init(Cipher.DECRYPT_MODE,secret(),new GCMParameterSpec(128,Base64.decode(iv,Base64.NO_WRAP)));
+      String key=new String(c.doFinal(Base64.decode(data,Base64.NO_WRAP)),StandardCharsets.UTF_8);
+      return key.matches(TOKEN_PATTERN)?key:null;
+    }catch(Exception e){return null;}
+  }
+  private void eraseToken(){
+    prefs().edit().remove(TOKEN).remove(IV).remove(ST).remove(LAST).remove(ACK).commit();
+  }
+  @Override protected void onResume(){super.onResume();visible=true;if(active&&tick!=null)ui.post(tick);}
+  @Override protected void onPause(){visible=false;if(tick!=null)ui.removeCallbacks(tick);super.onPause();}
+  @Override protected void onDestroy(){
+    visible=false;stop();
+    try{if(printer!=null)printer.disconnectPrinter(this);}catch(Exception ignored){}
+    io.shutdown();super.onDestroy();
   }
 }

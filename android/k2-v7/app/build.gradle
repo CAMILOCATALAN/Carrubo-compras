@@ -1,19 +1,15 @@
 plugins { id 'com.android.application' }
-
 android {
-    namespace 'cl.carrubo.k2print.v7'
-    compileSdk 34
-    defaultConfig {
-        applicationId 'cl.carrubo.k2print.v73'
-        minSdk 25
-        targetSdk 28
-        versionCode 11
-        versionName '0.7.3-live-backend'
-    }
-    buildTypes { release { minifyEnabled false } }
-    compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
-    }
+  namespace 'cl.carrubo.k2print.v7'
+  compileSdk 34
+  defaultConfig {
+    applicationId 'cl.carrubo.k2print.v74'
+    minSdk 25
+    targetSdk 28
+    versionCode 12
+    versionName '0.7.4-auto-demo'
+  }
+  buildTypes { release { minifyEnabled false } }
+  compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
 }
 dependencies { implementation 'com.sunmi:external-printerlibrary:1.0.12' }
