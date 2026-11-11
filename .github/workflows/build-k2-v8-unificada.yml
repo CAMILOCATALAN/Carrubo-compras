@@ -26,7 +26,7 @@ jobs:
           gradle-version: '8.9'
       - name: Revisar aislamiento
         run: |
-          grep -q "applicationId 'cl.carrubo.k2print.v8'" android/k2-v8/app/build.gradle
+          grep -q "applicationId 'cl.carrubo.k2print.v81'" android/k2-v8/app/build.gradle
           grep -q "kioskWeb.loadUrl" android/k2-v8/app/src/main/java/cl/carrubo/k2print/v8/MainActivity.java
           grep -q "printer.printText(ticket)" android/k2-v8/app/src/main/java/cl/carrubo/k2print/v8/MainActivity.java
           ! grep -q 'addJavascriptInterface(' android/k2-v8/app/src/main/java/cl/carrubo/k2print/v8/MainActivity.java
