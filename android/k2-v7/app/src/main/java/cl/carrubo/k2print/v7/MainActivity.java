@@ -15,7 +15,6 @@ import android.widget.TextView;
 import com.sunmi.externalprinterlibrary.api.ConnectCallback;
 import com.sunmi.externalprinterlibrary.api.SunmiPrinter;
 import com.sunmi.externalprinterlibrary.api.SunmiPrinterApi;
-import com.sunmi.externalprinterlibrary.api.TransCallback;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -53,7 +52,7 @@ public final class MainActivity extends Activity {
         scroller.addView(box);
 
         TextView title = new TextView(this);
-        title.setText("CARRUBO K2 — V7 DIAGNOSTICO");
+        title.setText("CARRUBO K2 — V7.1 DIAGNOSTICO");
         title.setTextSize(24); title.setTextColor(Color.rgb(135, 34, 24)); title.setGravity(Gravity.CENTER);
         box.addView(title);
 
@@ -73,7 +72,7 @@ public final class MainActivity extends Activity {
         box.addView(check);
 
         printButton = new Button(this);
-        printButton.setText("IMPRIMIR TICKET DE PRUEBA (NO COBRA)");
+        printButton.setText("PRUEBA V6: TEXTO + CORTE (NO COBRA)");
         printButton.setOnClickListener(v -> confirmPrint());
         box.addView(printButton);
 
@@ -161,24 +160,14 @@ public final class MainActivity extends Activity {
                     show("Impresora no lista. Prueba suspendida. Verificar papel.");
                     return;
                 }
-                api.startTransBuffer(true);
-                api.printText("CARRUBO - PRUEBA K2 V7\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n-------------------------------\nTICKET DIAGNOSTICO, NO VENTA\n\n");
+                // Mismo flujo SDK identificado en la V6: printText seguido de cutPaper.
+                // No usar buffer transaccional (no presente en el APK V6).
+                show("PASO 1 - printText");
+                api.printText("CARRUBO - K2 V7.1 TEST\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n---------------------\nTEST DIAGNOSTICO, NO VENTA\n\n");
+                show("PASO 2 - cutPaper");
                 api.cutPaper(1, 0);
-                // El resultado de recepción de printText NO certifica impresión. Esperamos callback.
-                api.commitTransBuffer(new TransCallback() {
-                    @Override public void onPrintResult(boolean success, int code) {
-                        if (success) {
-                            prefs().edit().putString(KEY, "confirmed").commit();
-                            show("Confirmación SDK SUNMI: ticket enviado correctamente. Verifica el papel.");
-                        } else {
-                            prefs().edit().putString(KEY, "unknown").commit();
-                            show("Sin confirmación física SDK (codigo " + code + "). No reintentar automáticamente.");
-                        }
-                        changeButtons();
-                    }
-                });
-                api.endTransBuffer();
-                show("Solicitud enviada al SDK. Esperando confirmación del servicio.");
+                prefs().edit().putString(KEY_STATE, "unknown").commit();
+                result = "SDK acepto printText + cutPaper. Comprueba el papel; SIN reintento automatico.";
             } catch (Exception e) {
                 prefs().edit().putString(KEY, "unknown").commit();
                 show("Estado ambiguo: " + e.getClass().getSimpleName() + ". Revisar papel.");
