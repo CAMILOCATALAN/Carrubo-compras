@@ -1,0 +1,34 @@
+name: Verificar API publica Carrubo V7 DEMO
+on:
+  push:
+    branches:
+      - build/k2-v7-diagnostico
+  workflow_dispatch:
+jobs:
+  endpoint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar endpoint publico de Carrubo sin login
+        shell: bash
+        run: |
+          set -eu
+          ROOT="https://carrubo-pos-demo.lovable.app"
+          echo "Test 1: GET demo claim debe ser 405"
+          get_code=$(curl --max-time 25 --silent --show-error --location-trusted=false -o /tmp/k2-get-body.txt -w '%{http_code}' "$ROOT/api/public/k2/v7-demo/claim" || true)
+          echo "PUBLIC_GET=$get_code"
+          cat /tmp/k2-get-body.txt | head -c 300 || true
+          echo ""
+          echo "Test 2: POST JSON de formato invalido debe ser 400 (NUNCA un ticket)"
+          post_code=$(curl --max-time 25 --silent --show-error -X POST -H "Content-Type: application/json" -d '{"code":"INVALID"}' -o /tmp/k2-post-body.txt -w '%{http_code}' "$ROOT/api/public/k2/v7-demo/claim" || true)
+          echo "PUBLIC_BAD_POST=$post_code"
+          cat /tmp/k2-post-body.txt | head -c 300 || true
+          echo ""
+          echo "Test 3: Kiosco demo devuelve HTTP 200"
+          root_code=$(curl --max-time 25 --silent --show-error -o /tmp/k2-root-body.txt -w '%{http_code}' "$ROOT/" || true)
+          echo "KIOSK_ROOT=$root_code"
+          if [ "$get_code" = "405" ] && [ "$post_code" = "400" ] && [ "$root_code" = "200" ]; then
+            echo "PASS: API V7 accessible y kiosco responde; no se hicieron cobros ni se crearon codigos."
+          else
+            echo "::error::API o kiosco no verificado: GET=$get_code POST=$post_code ROOT=$root_code"
+            exit 1
+          fi
