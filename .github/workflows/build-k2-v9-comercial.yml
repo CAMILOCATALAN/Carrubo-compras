@@ -1,7 +1,7 @@
 name: Compilar Carrubo K2 V9 Unificada
 on:
   push:
-    branches: [build/k2-v9-unificada]
+    branches: [build/k2-v9-comercial]
   workflow_dispatch:
 jobs:
   apk:
