@@ -1,6 +1,8 @@
 package cl.carrubo.k2print.v8;
 
 import android.app.Activity;
+import android.content.Context;
+import android.view.inputmethod.InputMethodManager;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.view.View;
@@ -144,6 +146,7 @@ public final class MainActivity extends Activity {
     shell.addView(bar,new LinearLayout.LayoutParams(-1,-2));
     FrameLayout viewHost=new FrameLayout(this);
     kioskWeb=new WebView(this);
+    kioskWeb.setFocusableInTouchMode(true);
     viewHost.addView(kioskWeb,new FrameLayout.LayoutParams(-1,-1));
     adminPanel.setBackgroundColor(Color.rgb(250,245,235));
     viewHost.addView(adminPanel,new FrameLayout.LayoutParams(-1,-1));
@@ -157,7 +160,19 @@ public final class MainActivity extends Activity {
   private void toggleAdmin(){
     adminOpen=!adminOpen;
     if(adminPanel!=null)adminPanel.setVisibility(adminOpen?View.VISIBLE:View.GONE);
-    if(adminOpen){message("V8 DEMO: emparejar y activar recepción.");controls();}
+    if(adminOpen){
+      message("V8 DEMO: emparejar y activar recepción.");controls();
+    } else {
+      // Native EditText left the Android keyboard visible above the customer kiosk.
+      if(codeInput!=null)codeInput.clearFocus();
+      if(kioskWeb!=null)kioskWeb.requestFocus();
+      try {
+        InputMethodManager ime=(InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE);
+        if(ime!=null && kioskWeb!=null)ime.hideSoftInputFromWindow(kioskWeb.getWindowToken(),0);
+      }catch(Exception ignored){}
+      getWindow().getDecorView().clearFocus();
+      if(kioskWeb!=null)kioskWeb.requestFocus();
+    }
   }
   private boolean allowedUrl(Uri url){
     return url!=null && "https".equalsIgnoreCase(url.getScheme())
