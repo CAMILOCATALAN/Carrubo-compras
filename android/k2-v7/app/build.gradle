@@ -1,0 +1,31 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cl.carrubo.k2print.v7'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cl.carrubo.k2print.v7'
+        minSdk 25
+        targetSdk 28
+        versionCode 7
+        versionName '0.7.0-diag'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    // SDK oficial SUNMI externo publicado Apache-2.0 en Maven Central.
+    implementation 'com.sunmi:external-printerlibrary:1.0.12'
+}
