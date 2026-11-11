@@ -2,188 +2,194 @@ package cl.carrubo.k2print.v7;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ComponentName;
-import android.content.Context;
-import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.IBinder;
 import android.os.Looper;
 import android.view.Gravity;
-import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import com.sunmi.extprinterservice.ExtPrinterService;
+import com.sunmi.externalprinterlibrary.api.ConnectCallback;
+import com.sunmi.externalprinterlibrary.api.SunmiPrinter;
+import com.sunmi.externalprinterlibrary.api.SunmiPrinterApi;
+import com.sunmi.externalprinterlibrary.api.TransCallback;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** V7 diagnóstico aislado: no consulta órdenes, no cobra, no usa el WebView de V6. */
+/** V7 diagnostico K2: solo un ticket fijo manual, SIN WebView, pagos, ni órdenes. */
 public final class MainActivity extends Activity {
-    private static final String PRINT_PREF = "v7_print_state";
-    private static final String KEY_STATE = "state"; // idle | pending | confirmed | unknown
+    private static final String PREFS = "k2_v7_diag_status";
+    private static final String KEY = "last_attempt";
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean running = new AtomicBoolean(false);
-    private volatile ExtPrinterService printer;
-    private boolean serviceBound;
+    private final AtomicBoolean working = new AtomicBoolean(false);
+    private volatile boolean connected = false;
+    private SunmiPrinterApi api;
     private TextView status;
     private Button printButton;
 
-    private final ServiceConnection connection = new ServiceConnection() {
-        @Override public void onServiceConnected(ComponentName name, IBinder binder) {
-            printer = ExtPrinterService.Stub.asInterface(binder);
-            show("Servicio SUNMI K2 conectado. Verificando estado.");
-            checkPrinter();
+    private final ConnectCallback cb = new ConnectCallback() {
+        @Override public void onFound() { show("Servicio de impresora SUNMI detectado."); }
+        @Override public void onUnfound() { connected = false; show("Impresora SUNMI no detectada."); changeButtons(); }
+        @Override public void onConnect() {
+            connected = true; show("Impresora SUNMI conectada."); checkPrinter();
         }
-        @Override public void onServiceDisconnected(ComponentName name) {
-            printer = null;
-            show("Servicio SUNMI desconectado. No se imprimirá.");
+        @Override public void onDisconnect() {
+            connected = false; show("Impresora SUNMI desconectada."); changeButtons();
         }
     };
 
-    @Override public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(32, 30, 32, 30);
-        root.setBackgroundColor(Color.rgb(250, 244, 232));
-        scroll.addView(root);
+    @Override public void onCreate(Bundle state) {
+        super.onCreate(state);
+        ScrollView scroller = new ScrollView(this);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(32, 26, 32, 26);
+        box.setBackgroundColor(Color.rgb(250, 244, 232));
+        scroller.addView(box);
 
         TextView title = new TextView(this);
-        title.setText("CARRUBO - V7 / PRUEBA K2");
-        title.setTextSize(25);
-        title.setTextColor(Color.rgb(118, 32, 25));
-        title.setGravity(Gravity.CENTER);
-        root.addView(title, full());
+        title.setText("CARRUBO K2 — V7 DIAGNOSTICO");
+        title.setTextSize(24); title.setTextColor(Color.rgb(135, 34, 24)); title.setGravity(Gravity.CENTER);
+        box.addView(title);
 
         TextView note = new TextView(this);
-        note.setText("SOLO DIAGNÓSTICO · NO COBRA · NO EMITE BOLETAS · NO ENVÍA COMANDAS\n\nInstalada en paralelo a V6. Imprime únicamente un ticket fijo cuando el operador lo confirma.");
-        note.setTextSize(16);
-        note.setPadding(0, 30, 0, 24);
-        root.addView(note, full());
+        note.setText("APP DE DIAGNOSTICO · SIN COBRO · SIN BOLETA SII\n\nNO ENVIA COMANDAS A COCINA\nNO MODIFICA LA V6\n\nSolamente imprime un ticket fijo al pulsar el botón y confirmar.");
+        note.setTextSize(17); note.setPadding(0, 20, 0, 30);
+        box.addView(note);
 
         status = new TextView(this);
-        status.setTextSize(18);
-        status.setTextColor(Color.BLACK);
-        status.setText("Buscando servicio SUNMI…");
-        root.addView(status, full());
+        status.setTextSize(19); status.setTextColor(Color.BLACK);
+        status.setText("Conectando impresora SUNMI...");
+        box.addView(status);
 
         Button check = new Button(this);
-        check.setText("Verificar impresora");
+        check.setText("Verificar estado de impresora");
         check.setOnClickListener(v -> checkPrinter());
-        root.addView(check, full());
+        box.addView(check);
 
         printButton = new Button(this);
-        printButton.setText("Imprimir ticket de prueba (sin cobro)");
+        printButton.setText("IMPRIMIR TICKET DE PRUEBA (NO COBRA)");
         printButton.setOnClickListener(v -> confirmPrint());
-        root.addView(printButton, full());
+        box.addView(printButton);
 
         Button reset = new Button(this);
-        reset.setText("Reiniciar bloqueo manualmente");
+        reset.setText("Restablecer bloqueo manualmente");
         reset.setOnClickListener(v -> new AlertDialog.Builder(this)
-            .setTitle("Revisar el papel antes de reiniciar")
-            .setMessage("Si la impresión anterior quedó pendiente o desconocida, NO la repitas sin revisar el papel. Esta opción solo elimina el bloqueo local de diagnóstico.")
-            .setNegativeButton("Volver", null)
-            .setPositiveButton("Confirmar reinicio", (d, w) -> {
-                prefs().edit().putString(KEY_STATE, "idle").apply();
-                show("Bloqueo local reiniciado por operador.");
-                updateButtons();
+            .setTitle("Primero revisa el papel")
+            .setMessage("Si la impresión quedó en estado desconocido, NO repitas sin revisar si salió papel. Esto solo permite una nueva prueba por decisión del operador.")
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("Restablecer", (d, w) -> {
+                if (!working.get()) {
+                    prefs().edit().putString(KEY, "idle").commit();
+                    show("Bloqueo local restablecido.");
+                    changeButtons();
+                }
             }).show());
-        root.addView(reset, full());
-        setContentView(scroll);
-        updateButtons();
+        box.addView(reset);
+        setContentView(scroller);
+        changeButtons();
         connect();
     }
 
-    private LinearLayout.LayoutParams full() {
-        return new LinearLayout.LayoutParams(-1, -2);
-    }
-    private SharedPreferences prefs() { return getSharedPreferences(PRINT_PREF, MODE_PRIVATE); }
-    private String state() { return prefs().getString(KEY_STATE, "idle"); }
-    private void show(String msg) { ui.post(() -> { if (status != null) status.setText(msg + "\n\nIntento local: " + state()); }); }
-    private void updateButtons() {
-        boolean can = printer != null && !running.get() && "idle".equals(state());
-        if (printButton != null) printButton.setEnabled(can);
-    }
-    private void connect() {
-        Intent intent = new Intent("com.sunmi.extprinterservice.PrinterService");
-        intent.setPackage("com.sunmi.extprinterservice");
-        try {
-            serviceBound = bindService(intent, connection, Context.BIND_AUTO_CREATE);
-            if (!serviceBound) show("Servicio com.sunmi.extprinterservice no disponible en este dispositivo.");
-        } catch (Exception e) {
-            show("No se pudo conectar al servicio SUNMI: " + e.getClass().getSimpleName());
-        }
-    }
-    private void checkPrinter() {
-        ExtPrinterService p = printer;
-        if (p == null) { show("Impresora sin conexión."); updateButtons(); return; }
-        io.execute(() -> {
-            try {
-                int s = p.getPrinterStatus();
-                show("SUNMI estado " + s + (s == 0 ? " · NORMAL" : " · NO LISTA"));
-            } catch (Exception e) { show("Error consultando impresora: " + e.getClass().getSimpleName()); }
-            ui.post(this::updateButtons);
+    private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
+    private String state() { return prefs().getString(KEY, "idle"); }
+    private void show(String m) {
+        ui.post(() -> {
+            if (status != null) status.setText(m + "\n\nEstado persistente: " + state());
         });
     }
+    private void changeButtons() {
+        ui.post(() -> { if (printButton != null)
+            printButton.setEnabled(connected && !working.get() && "idle".equals(state())); });
+    }
+
+    private void connect() {
+        try {
+            api = SunmiPrinterApi.getInstance();
+            // Nombre de enum confirmado en el APK V6 original del K2.
+            api.setPrinter(SunmiPrinter.SunmiYKPriner, new String[0]);
+            api.connectPrinter(this, cb);
+        } catch (Exception e) {
+            connected = false; show("Error inicializando SUNMI: " + e.getClass().getSimpleName());
+        }
+        changeButtons();
+    }
+
+    private void checkPrinter() {
+        if (!connected || api == null) { show("No hay conexion con el servicio SUNMI."); changeButtons(); return; }
+        io.execute(() -> {
+            try {
+                int v = api.getPrinterStatus();
+                show(v == 0 ? "Impresora normal: lista." : "Impresora NO lista, codigo " + v);
+            } catch (Exception e) { show("Error leyendo estado: " + e.getClass().getSimpleName()); }
+            changeButtons();
+        });
+    }
+
     private void confirmPrint() {
-        if (printer == null || running.get() || !"idle".equals(state())) return;
+        if (!connected || working.get() || !"idle".equals(state())) return;
         new AlertDialog.Builder(this)
-            .setTitle("Impresión FÍSICA de diagnóstico")
-            .setMessage("¿Imprimir exactamente un ticket fijo de prueba? No se cobrará, ni se conectará a Mercado Pago, ni se enviará a cocina.")
+            .setTitle("Prueba FISICA de impresión")
+            .setMessage("¿Imprimir UN ticket de prueba en la impresora integrada? No cobrará dinero ni enviará pedidos.")
             .setNegativeButton("Cancelar", null)
             .setPositiveButton("Imprimir una vez", (d, w) -> beginPrint())
             .show();
     }
+
     private void beginPrint() {
-        if (printer == null || !running.compareAndSet(false, true) || !"idle".equals(state())) { running.set(false); return; }
-        // Reservar antes de ejecutar: ante una caída no se repite automáticamente.
-        prefs().edit().putString(KEY_STATE, "pending").commit();
-        ui.post(this::updateButtons);
-        show("Intento reservado. Ejecutando en segundo plano.");
-        final ExtPrinterService p = printer;
+        if (!connected || !"idle".equals(state()) || !working.compareAndSet(false, true)) return;
+        prefs().edit().putString(KEY, "pending").commit();
+        changeButtons();
+        show("Prueba iniciada. Sin reintentos automáticos.");
+
         ui.postDelayed(() -> {
-            if (running.get() && "pending".equals(state())) {
-                prefs().edit().putString(KEY_STATE, "unknown").commit();
-                show("Resultado DESCONOCIDO. Revisar papel antes de intentar otra impresión.");
-                updateButtons();
+            if ("pending".equals(state())) {
+                prefs().edit().putString(KEY, "unknown").commit();
+                show("SIN CONFIRMACION EN 25 SEGUNDOS: verificar el papel antes de restablecer.");
             }
         }, 25000);
+
         io.execute(() -> {
-            String result;
             try {
-                if (p.getPrinterStatus() != 0) throw new IllegalStateException("impresora no lista");
-                p.startTransBuffer();
-                p.printText("CARRUBO - PRUEBA K2 V7\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n-------------------------\nTEST IMPRESORA - NO VENTA\n\n");
-                p.cutPaper(1, 0);
-                boolean ok = p.endTransBuffer(); // Única confirmación del servicio; no usar retorno de printText.
-                if (ok) {
-                    prefs().edit().putString(KEY_STATE, "confirmed").commit();
-                    result = "Servicio SUNMI confirmó impresión. Verificar ticket físico.";
-                } else {
-                    prefs().edit().putString(KEY_STATE, "unknown").commit();
-                    result = "No hubo confirmación de impresión. Revisar papel; sin reintentos automáticos.";
+                if (api.getPrinterStatus() != 0) {
+                    prefs().edit().putString(KEY, "unknown").commit();
+                    show("Impresora no lista. Prueba suspendida. Verificar papel.");
+                    return;
                 }
+                api.startTransBuffer(true);
+                api.printText("CARRUBO - PRUEBA K2 V7\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n-------------------------------\nTICKET DIAGNOSTICO, NO VENTA\n\n");
+                api.cutPaper(1, 0);
+                // El resultado de recepción de printText NO certifica impresión. Esperamos callback.
+                api.commitTransBuffer(new TransCallback() {
+                    @Override public void onPrintResult(boolean success, int code) {
+                        if (success) {
+                            prefs().edit().putString(KEY, "confirmed").commit();
+                            show("Confirmación SDK SUNMI: ticket enviado correctamente. Verifica el papel.");
+                        } else {
+                            prefs().edit().putString(KEY, "unknown").commit();
+                            show("Sin confirmación física SDK (codigo " + code + "). No reintentar automáticamente.");
+                        }
+                        changeButtons();
+                    }
+                });
+                api.endTransBuffer();
+                show("Solicitud enviada al SDK. Esperando confirmación del servicio.");
             } catch (Exception e) {
-                prefs().edit().putString(KEY_STATE, "unknown").commit();
-                result = "Error o resultado ambiguo: " + e.getClass().getSimpleName() + ". Revisar papel.";
+                prefs().edit().putString(KEY, "unknown").commit();
+                show("Estado ambiguo: " + e.getClass().getSimpleName() + ". Revisar papel.");
             } finally {
-                running.set(false);
+                working.set(false);
+                changeButtons();
             }
-            show(result);
-            ui.post(this::updateButtons);
         });
     }
     @Override protected void onDestroy() {
-        if (serviceBound) { try { unbindService(connection); } catch (Exception ignored) { } }
-        printer = null;
+        try { if (api != null) api.disconnectPrinter(this); } catch (Exception ignored) {}
         io.shutdown();
         super.onDestroy();
     }
