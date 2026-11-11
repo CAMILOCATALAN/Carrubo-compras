@@ -1,0 +1,15 @@
+plugins { id 'com.android.application' }
+android {
+  namespace 'cl.carrubo.k2print.v8'
+  compileSdk 34
+  defaultConfig {
+    applicationId 'cl.carrubo.k2print.v8'
+    minSdk 25
+    targetSdk 28
+    versionCode 80
+    versionName '0.8.0-unificada-demo'
+  }
+  buildTypes { release { minifyEnabled false } }
+  compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
+}
+dependencies { implementation 'com.sunmi:external-printerlibrary:1.0.12' }
