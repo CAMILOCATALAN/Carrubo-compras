@@ -1,0 +1,49 @@
+name: Compilar Carrubo K2 V9 Unificada
+on:
+  push:
+    branches: [build/k2-v9-unificada]
+  workflow_dispatch:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Preparar Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -1)
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" --install "platforms;android-34" "build-tools;34.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Revisar aislamiento
+        run: |
+          grep -q "applicationId 'cl.carrubo.k2print.v91'" android/k2-v9/app/build.gradle
+          grep -q "kioskWeb.loadUrl" android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
+          grep -q "printer.printText(ticket)" android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
+          ! grep -q 'addJavascriptInterface(' android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
+          ! grep -q 'api.mercadopago.com' android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
+      - name: Compilar APK V9
+        working-directory: android/k2-v9
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Revisar archivo Android y firma
+        run: |
+          APK=android/k2-v9/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
+          sha256sum "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "package:|sdkVersion:"
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify -v "$APK"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Carrubo-K2-V9-Unificada-DEMO-APK
+          path: android/k2-v9/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

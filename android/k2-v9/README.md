@@ -1,0 +1,11 @@
+# Carrubo K2 V9 — Piloto comercial, NO ABIERTO A CLIENTES AUN
+Una sola app: WebView con la ruta `/kiosk-v8` del POS y receptor nativo de comandas comerciales SUNMI K2.
+Paquete: cl.carrubo.k2print.v9 (no modifica V6, V7.4 ni V8). Firma debug GitHub Actions apta para prueba controlada, no release estable.
+Inicio: abrir V9; ruta /kiosk-v8 requiere login de cuenta limitada con rol kiosk o admin. Por seguridad, NO usar la cuenta admin en un tótem público.
+Administrador: mantener pulsado AJUSTES para configurar la impresora. Durante el emparejamiento ingresa código comercial 24 HEX del panel y un PIN local de 6 cifras. Se guarda bearer comercial cifrado con Android Keystore. PIN se protege con 5 intentos/5 min.
+El equipo consulta el endpoint /api/public/k2/sales/poll (HTTPS host fijo) cada 7s únicamente cuando tiene un token comercial autorizado, la cola SALES_PRINT_QUEUE_ENABLED true y la app está en primer plano. Nunca consulta cola DEMO, nunca hace POST a Mercado Pago.
+El backend solamente entrega comandas tras confirmar GET Mercado Pago procesado y registrar el job exactamente una vez. Ticket de 32 columnas marcado COMANDA DE COCINA, NO TRIBUTARIO. La N950 imprime separadamente el voucher del comprador.
+Al recibir un trabajo, V9 guarda job ID y estado ANTES de imprimir. Usa printText(ticket + 10 LF) seguido de cutPaper(1,0), controlador probado en V8. ACK sent_unverified NO asegura papel. Tras ACK correcto, vuelve automáticamente a idle para recibir siguiente pedido sin intervención; si hay error, detiene y exige revisión sin reimprimir.
+Para habilitar comercial deben completarse credenciales y gates de pagos, aprobacion de precios, emparejamiento y permiso del dispositivo, autenticacion de kiosk; hoy todo OFF. Nunca usar para clientes sin cerrar conciliacion, webhook de recuperacion, firma release estable y prueba pospago.
+El acceso a ajustes se protege con PIN local; el catálogo WebView no tiene puente JavaScript a impresora ni datos del bearer.
+El código de emparejamiento comercial y el endpoint /sales/pair deben estar publicados antes de introducirlo. No generes pagos reales por esta APK hasta terminar el rollout.
