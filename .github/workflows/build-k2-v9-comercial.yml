@@ -1,3 +1,4 @@
+# Nueva ejecución tras la recuperación de GitHub Actions (2026-11-11). Sin pagos reales.
 name: Compilar Carrubo K2 V9 Unificada
 on:
   push:
@@ -5,7 +6,7 @@ on:
   workflow_dispatch:
 jobs:
   apk:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
