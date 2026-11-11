@@ -40,3 +40,16 @@ jobs:
           path: android/k2-v7/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Verificar ruta DEMO en vista previa sin sesión
+        if: always()
+        shell: bash
+        run: |
+          code=$(curl -sS --max-time 20 -o /tmp/v7check.txt -w '%{http_code}' \
+            'https://id-preview--66ed1f1d-568e-4eac-814b-9dc03afb9bfc.lovable.app/api/public/k2/v7-demo/claim' || echo '000')
+          echo "V7_DEMO_PREVIEW_GET_HTTP=$code"
+          if [ "$code" = "405" ]; then
+            echo "Endpoint demo alcanzable sin login (405 esperado para GET)."
+          else
+            echo "::warning::Endpoint DEMO no verificado para APK; HTTP $code. No habilitar pruebas hasta resolver acceso."
+          fi
