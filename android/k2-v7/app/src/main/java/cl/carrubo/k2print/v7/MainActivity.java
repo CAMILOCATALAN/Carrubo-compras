@@ -52,7 +52,7 @@ public final class MainActivity extends Activity {
         scroller.addView(box);
 
         TextView title = new TextView(this);
-        title.setText("CARRUBO K2 — V7.1 DIAGNOSTICO");
+        title.setText("CARRUBO K2 — V7.2 DIAGNOSTICO");
         title.setTextSize(24); title.setTextColor(Color.rgb(135, 34, 24)); title.setGravity(Gravity.CENTER);
         box.addView(title);
 
@@ -72,7 +72,7 @@ public final class MainActivity extends Activity {
         box.addView(check);
 
         printButton = new Button(this);
-        printButton.setText("PRUEBA V6: TEXTO + CORTE (NO COBRA)");
+        printButton.setText("PRUEBA V7.2: AVANCE DE PAPEL + CORTE");
         printButton.setOnClickListener(v -> confirmPrint());
         box.addView(printButton);
 
@@ -162,12 +162,12 @@ public final class MainActivity extends Activity {
                 }
                 // Mismo flujo SDK identificado en la V6: printText seguido de cutPaper.
                 // No usar buffer transaccional (no presente en el APK V6).
-                show("PASO 1 - printText");
-                api.printText("CARRUBO - K2 V7.1 TEST\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n---------------------\nTEST DIAGNOSTICO, NO VENTA\n\n");
-                show("PASO 2 - cutPaper");
+                show("PASO 1 - texto y 10 lineas adicionales de avance");
+                api.printText("CARRUBO - K2 V7.2 TEST\nNO TRIBUTARIO\nSIN COBRO\nNO SE ENVIO A COCINA\n---------------------\nTEST DIAGNOSTICO, NO VENTA\n\n\n\n\n\n\n\n\n\n\n\n");
+                show("PASO 2 - corte parcial (papel debe quedar accesible)");
                 api.cutPaper(1, 0);
                 prefs().edit().putString(KEY, "unknown").commit();
-                show("SDK acepto printText + cutPaper. Comprueba el papel; SIN reintento automatico.");
+                show("Se enviaron texto y avances adicionales, luego corte parcial. Verificar que el ticket este accesible; sin reintento automatico.");
             } catch (Exception e) {
                 prefs().edit().putString(KEY, "unknown").commit();
                 show("Estado ambiguo: " + e.getClass().getSimpleName() + ". Revisar papel.");

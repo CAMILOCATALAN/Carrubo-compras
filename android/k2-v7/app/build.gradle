@@ -7,11 +7,11 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'cl.carrubo.k2print.v71'
+        applicationId 'cl.carrubo.k2print.v72'
         minSdk 25
         targetSdk 28
-        versionCode 8
-        versionName '0.7.1-v6-flow'
+        versionCode 9
+        versionName '0.7.2-paper-feed'
     }
 
     buildTypes {

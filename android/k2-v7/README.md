@@ -1,19 +1,16 @@
-# Carrubo K2 V7 — APK de diagnóstico nativo
+# Carrubo K2 V7.2 — diagnóstico de salida de papel
 
-Este proyecto se construye en GitHub Actions sobre la rama aislada build/k2-v7-diagnostico, SIN modificar la rama main ni APK V6.
+Esta versión de PRUEBA, separada de V6 y V7.1, se compila como `cl.carrubo.k2print.v72`.
 
-- App ID: cl.carrubo.k2print.v7, permite instalar paralela a V6 cl.carrubo.k2print.v6.
-- Objetivo: PRIMER TICKET FÍSICO DE PRUEBA, sin pagos/órdenes/comandas ni WebView. No es aún el POS V7 productivo.
-- Librería oficial com.sunmi:external-printerlibrary:1.0.12 (Apache 2.0), servicio K2 com.sunmi.extprinterservice.
-- La impresión solo se produce tras confirmación explícita del operador.
-- Verifica estado 0 (normal); comienza transacción, envía texto de prueba, corta papel y confirma con endTransBuffer(). NO usa retorno de printText como prueba de impresión.
-- Ejecuta transacción en hilo independiente; bloquea reintentos si queda pendiente/desconocido.
-- Estado local persistido; solo reinicio manual tras verificar el papel.
-- No solicita permiso de internet, no usa datos de tarjetas, no envía requests a Mercado Pago.
-- Android minSdk 25 (K2 Android 7.1.2); targetSdk 28.
-- APK de Actions es DEBUG firmado con una clave de prueba; NO instalar para manejar dinero ni dejar en producción. Para producción crear release propia firmada y auditar software.
-- Descarga el artifact de Actions, extrae el APK, pásalo al K2, instala con APK junto a V6.
-- Si el servicio externo no existe, el botón de impresión permanece deshabilitado. Confirmar versión firmware K2 y que SDK coincide.
-- Tras imprimir el ticket fijo, no reemplazar V6: se necesitará un canal autenticado de trabajos de impresión tras pagos confirmados, boleta SII y bloqueo de duplicados persistente en servidor.
+**Resultado V7.1:** la impresora imprimió un ticket, pero quedó poco accesible en la ranura. Los cobros no estaban habilitados.
+**Cambio V7.2:** exactamente el mismo SDK SUNMI K2 / `SunmiPrinterApi.printText` y `cutPaper(1, 0)`, sin modo transaccional, con **10 saltos de línea adicionales** después del mensaje fijo para que avance el papel antes del corte parcial. No añade API de cobro ni WebView.
 
-Estado: código preparado para compilación/validación; compatibilidad real requiere prueba en el equipo.
+Para probar:
+1. Verificar y retirar el papel de la prueba V7.1. No tirar con fuerza si el papel está trabado.
+2. Instalar APK `Carrubo_K2_V7_2_Prueba_Papel.apk`. Mantener V6 sin cambios.
+3. Abrir "Carrubo K2 — V7.2 DIAGNOSTICO"; verificar impresora normal/lista.
+4. Pulsar "PRUEBA V7.2: AVANCE DE PAPEL + CORTE" y confirmar UNA VEZ.
+5. Revisar si el ticket sale lo bastante para sujetarlo y si el corte parcial funciona. Enviar foto.
+6. El estado pasa a unknown porque el SDK solo certifica recepción de comandos, no que el papel haya salido. No repetir automáticamente: revisar papel antes de usar botón de restablecer.
+
+APK de DEBUG firmada solo para pruebas internas; NO es sistema de ventas. El nombre de paquete es distinto para poder instalar junto a V6 y V7.1. La emisión de boleta SII, pago real, integración de cocina y confirmación física siguen pendientes.
