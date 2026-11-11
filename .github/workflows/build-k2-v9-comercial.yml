@@ -26,9 +26,9 @@ jobs:
           gradle-version: '8.9'
       - name: Revisar aislamiento
         run: |
-          grep -q "applicationId 'cl.carrubo.k2print.v91'" android/k2-v9/app/build.gradle
+          grep -q "applicationId 'cl.carrubo.k2print.v9'" android/k2-v9/app/build.gradle
           grep -q "kioskWeb.loadUrl" android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
-          grep -q "printer.printText(ticket)" android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
+          grep -q "printer.printText(ticket+" android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
           ! grep -q 'addJavascriptInterface(' android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
           ! grep -q 'api.mercadopago.com' android/k2-v9/app/src/main/java/cl/carrubo/k2print/v9/MainActivity.java
       - name: Compilar APK V9
@@ -43,7 +43,7 @@ jobs:
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify -v "$APK"
       - uses: actions/upload-artifact@v4
         with:
-          name: Carrubo-K2-V9-Unificada-DEMO-APK
+          name: Carrubo-K2-V9-Comercial-Piloto-APK
           path: android/k2-v9/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
