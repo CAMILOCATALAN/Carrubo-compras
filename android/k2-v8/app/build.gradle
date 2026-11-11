@@ -6,8 +6,8 @@ android {
     applicationId 'cl.carrubo.k2print.v8'
     minSdk 25
     targetSdk 28
-    versionCode 80
-    versionName '0.8.0-unificada-demo'
+    versionCode 81
+    versionName '0.8.1-unificada-demo'
   }
   buildTypes { release { minifyEnabled false } }
   compileOptions { sourceCompatibility JavaVersion.VERSION_1_8; targetCompatibility JavaVersion.VERSION_1_8 }
