@@ -7,8 +7,8 @@ android {
         applicationId 'cl.carrubo.k2print.v73'
         minSdk 25
         targetSdk 28
-        versionCode 10
-        versionName '0.7.3-server-demo'
+        versionCode 11
+        versionName '0.7.3-live-backend'
     }
     buildTypes { release { minifyEnabled false } }
     compileOptions {

@@ -41,12 +41,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Verificar ruta DEMO en vista previa sin sesión
+      - name: Verificar ruta DEMO publicada sin sesión
         if: always()
         shell: bash
         run: |
           code=$(curl -sS --max-time 20 -o /tmp/v7check.txt -w '%{http_code}' \
-            'https://id-preview--66ed1f1d-568e-4eac-814b-9dc03afb9bfc.lovable.app/api/public/k2/v7-demo/claim' || echo '000')
+            'https://carrubo-pos-demo.lovable.app/api/public/k2/v7-demo/claim' || echo '000')
           echo "V7_DEMO_PREVIEW_GET_HTTP=$code"
           if [ "$code" = "405" ]; then
             echo "Endpoint demo alcanzable sin login (405 esperado para GET)."

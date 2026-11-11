@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class MainActivity extends Activity {
   private static final String HOST =
-      "id-preview--66ed1f1d-568e-4eac-814b-9dc03afb9bfc.lovable.app";
+      "carrubo-pos-demo.lovable.app";
   private static final String PATH = "/api/public/k2/v7-demo/claim";
   private static final String PREFS = "carrubo_k2_v73";
   private static final String ST = "state";
