@@ -3,7 +3,7 @@ android {
   namespace 'cl.carrubo.k2print.v8'
   compileSdk 34
   defaultConfig {
-    applicationId 'cl.carrubo.k2print.v8'
+    applicationId 'cl.carrubo.k2print.v81'
     minSdk 25
     targetSdk 28
     versionCode 81
